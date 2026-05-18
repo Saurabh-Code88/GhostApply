@@ -244,6 +244,6 @@ ghostapply/
 
 ---
 
-## The Pitch
+## TLDR
 
 > "GhostApply is an agentic job search engine I built out of frustration — it scrapes Indeed and LinkedIn every morning, scores each JD against my resume using RAG and pgvector, researches the founder, and drafts a personalized cold message. I just approve and send. I used it to find this interview."
