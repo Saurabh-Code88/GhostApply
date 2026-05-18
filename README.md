@@ -22,14 +22,14 @@ An **agentic job search engine** — every morning it scrapes Indeed + LinkedIn,
 │  │Playwright  │  │RAG+pgvector│  │  MCP Tools    │  │
 │  └────────────┘  └────────────┘  └───────────────┘  │
 │                                                     │
-│  ┌────────────────────────────────────────────────┐  │
-│  │           Outreach Agent                       │  │
-│  │   Gmail OAuth · LinkedIn Playwright            │  │
-│  └────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────┐ │
+│  │           Outreach Agent                       │ │
+│  │   Gmail OAuth · LinkedIn Playwright            │ │
+│  └────────────────────────────────────────────────┘ │
 │                                                     │
 │  ┌──────────────┐        ┌─────────────────────┐    │
-│  │  PostgreSQL  │        │       Redis          │    │
-│  │  + pgvector  │        │    (Bull queue)      │    │
+│  │  PostgreSQL  │        │       Redis         │    │
+│  │  + pgvector  │        │    (Bull queue)     │    │
 │  └──────────────┘        └─────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
