@@ -1,0 +1,8 @@
+node_modules/
+.env
+dist/
+.gmail_token.json
+.linkedin_session.json
+uploads/
+*.log
+.DS_Store

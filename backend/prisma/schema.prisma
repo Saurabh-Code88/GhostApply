@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Resume {
+  id        String   @id @default(cuid())
+  userId    String   @unique @map("userid")
+  content   String
+  createdAt DateTime @default(now()) @map("createdat")
+  updatedAt DateTime @updatedAt @map("updatedat")
+
+  @@map("resumes")
+}
+model Job {
+  id              String    @id @default(cuid())
+  title           String
+  company         String
+  location        String?
+  salary          String?
+  description     String
+  url             String    @unique
+  source          String
+  postedAt        DateTime? @map("postedat")
+  fitScore        Float?    @map("fitscore")
+  fitReason       String?   @map("fitreason")
+  status          JobStatus @default(PENDING)
+  founderName     String?   @map("foundername")
+  founderLinkedIn String?   @map("founderlinkedin")
+  founderTwitter  String?   @map("foundertwitter")
+  founderEmail    String?   @map("founderemail")
+  companyNews     String?   @map("companynews")
+  draftMessage    String?   @map("draftmessage")
+  outreachChannel String?   @map("outreachchannel")
+  sentAt          DateTime? @map("sentat")
+  createdAt       DateTime  @default(now()) @map("createdat")
+  updatedAt       DateTime  @updatedAt @map("updatedat")
+  outreachLogs    OutreachLog[]
+
+  @@map("jobs")
+}
+
+model OutreachLog {
+  id        String         @id @default(cuid())
+  jobId     String         @map("jobid")
+  job       Job            @relation(fields: [jobId], references: [id])
+  message   String
+  channel   String         @default("linkedin")
+  threadId  String?        @map("threadid")
+  sentAt    DateTime?      @map("sentat")
+  status    OutreachStatus @default(DRAFT)
+  createdAt DateTime       @default(now()) @map("createdat")
+
+  @@map("outreach_logs")
+}
+
+enum JobStatus {
+  PENDING
+  MATCHED
+  SKIPPED
+  APPROVED
+  SENT
+  REPLIED
+  GHOSTED
+
+  @@map("jobstatus")
+}
+
+enum OutreachStatus {
+  DRAFT
+  SENT
+  REPLIED
+  GHOSTED
+
+  @@map("outreachstatus")
+}
