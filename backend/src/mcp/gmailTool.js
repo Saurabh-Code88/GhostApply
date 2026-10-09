@@ -9,46 +9,43 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const TOKEN_PATH = path.join(__dirname, '../../.gmail_token.json')
 
-// ─── OAuth2 Client Setup ──────────────────────────────────────────────────────
-
 function getOAuthClient() {
-  return new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    process.env.GMAIL_REDIRECT_URI || 'http://localhost:3001/auth/gmail/callback'
-  )
+  const clientId = process.env.GMAIL_CLIENT_ID
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET
+  const redirectUri = process.env.GMAIL_REDIRECT_URI || 'http://localhost:3001/auth/gmail/callback'
+
+  if (!clientId || !clientSecret) {
+    throw new Error('GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET must be set before Gmail OAuth can be used.')
+  }
+
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri)
 }
 
-// Generate auth URL — user visits this once to grant access
 export function getAuthUrl() {
   const oauth2Client = getOAuthClient()
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [
       'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/gmail.readonly', // to check replies
+      'https://www.googleapis.com/auth/gmail.readonly',
     ],
     prompt: 'consent'
   })
 }
 
-// Exchange code for tokens — called after user grants access
 export async function exchangeCodeForTokens(code) {
   const oauth2Client = getOAuthClient()
   const { tokens } = await oauth2Client.getToken(code)
-  // Save tokens to disk
   fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2))
   console.log('✅ Gmail tokens saved')
   return tokens
 }
 
-// Load saved tokens
 export function loadTokens() {
   if (!fs.existsSync(TOKEN_PATH)) return null
   return JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'))
 }
 
-// Get authenticated Gmail client
 export async function getGmailClient() {
   const tokens = loadTokens()
   if (!tokens) throw new Error('Gmail not connected. Visit /auth/gmail to connect.')
@@ -56,7 +53,6 @@ export async function getGmailClient() {
   const oauth2Client = getOAuthClient()
   oauth2Client.setCredentials(tokens)
 
-  // Auto-refresh if expired
   oauth2Client.on('tokens', (newTokens) => {
     const current = loadTokens() || {}
     fs.writeFileSync(TOKEN_PATH, JSON.stringify({ ...current, ...newTokens }, null, 2))
@@ -65,14 +61,11 @@ export async function getGmailClient() {
   return google.gmail({ version: 'v1', auth: oauth2Client })
 }
 
-// ─── Tool: Send Email ─────────────────────────────────────────────────────────
-
 export async function send_email({ to, subject, body, jobId }) {
   console.log(`📧 Gmail: sending to ${to}...`)
 
   const gmail = await getGmailClient()
 
-  // Build RFC 2822 email
   const message = [
     `To: ${to}`,
     `Subject: ${subject}`,
@@ -82,7 +75,6 @@ export async function send_email({ to, subject, body, jobId }) {
     body
   ].join('\n')
 
-  // Base64 encode (URL-safe)
   const encoded = Buffer.from(message)
     .toString('base64')
     .replace(/\+/g, '-')
@@ -102,8 +94,6 @@ export async function send_email({ to, subject, body, jobId }) {
   }
 }
 
-// ─── Tool: Check for Replies ──────────────────────────────────────────────────
-
 export async function check_replies({ threadIds }) {
   console.log(`🔍 Gmail: checking ${threadIds.length} threads for replies...`)
 
@@ -121,7 +111,6 @@ export async function check_replies({ threadIds }) {
 
       const messages = thread.data.messages || []
 
-      // If more than 1 message in thread → got a reply!
       if (messages.length > 1) {
         const lastMsg = messages[messages.length - 1]
         const from = lastMsg.payload?.headers?.find(h => h.name === 'From')?.value
@@ -138,9 +127,6 @@ export async function check_replies({ threadIds }) {
   console.log(`  ↳ ${repliedCount}/${threadIds.length} threads have replies`)
   return replies
 }
-
-// ─── Tool: Draft Subject Line ─────────────────────────────────────────────────
-// Generates a compelling subject for cold outreach
 
 import Groq from 'groq-sdk'
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
