@@ -1,0 +1,124 @@
+// src/db/client.js
+import { PrismaClient } from '@prisma/client'
+import pg from 'pg'
+
+const fallbackDbUrl = 'postgresql://ghost:ghost123@127.0.0.1:5433/ghostapply'
+const fallbackRedisUrl = 'redis://localhost:6379'
+
+function getPgConfig() {
+  const databaseUrl = process.env.DATABASE_URL || fallbackDbUrl
+
+  if (databaseUrl) {
+    try {
+      const parsed = new URL(databaseUrl)
+      return {
+        host: parsed.hostname,
+        port: Number(parsed.port || 5432),
+        database: parsed.pathname.replace('/', ''),
+        user: parsed.username || 'ghost',
+        password: parsed.password || 'ghost123',
+        ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
+      }
+    } catch {
+      // Fall back to the local defaults below if DATABASE_URL is malformed.
+    }
+  }
+
+  return {
+    host: process.env.PGHOST || '127.0.0.1',
+    port: Number(process.env.PGPORT || 5433),
+    database: process.env.PGDATABASE || 'ghostapply',
+    user: process.env.PGUSER || 'ghost',
+    password: process.env.PGPASSWORD || 'ghost123',
+    ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false,
+  }
+}
+
+const pgConfig = getPgConfig()
+
+// Prisma client (for ORM queries)
+export const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL || fallbackDbUrl,
+    },
+  },
+})
+
+// Raw pg client (for vector operations - pgvector needs raw SQL)
+const pool = new pg.Pool({
+  host: pgConfig.host,
+  port: pgConfig.port,
+  database: pgConfig.database,
+  user: pgConfig.user,
+  password: pgConfig.password,
+  ssl: pgConfig.ssl,
+})
+
+export const redisUrl = process.env.REDIS_URL || fallbackRedisUrl
+
+// Run once on startup - enables pgvector extension
+export async function initDB() {
+  const client = await pool.connect()
+  try {
+    await client.query('CREATE EXTENSION IF NOT EXISTS vector')
+    console.log('✅ pgvector extension ready')
+  } finally {
+    client.release()
+  }
+}
+
+// Store embedding for a resume
+export async function saveResumeEmbedding(resumeId, embedding) {
+  const client = await pool.connect()
+  try {
+    const embeddingStr = '[' + Array.from(embedding).join(',') + ']'
+    await client.query(
+      'UPDATE resumes SET embedding = $1::vector WHERE id = $2',
+      [embeddingStr, resumeId]
+    )
+    console.log('  ✅ Embedding saved for resume:', resumeId)
+  } catch (err) {
+    console.error('  ❌ Embedding save error:', err.message)
+  } finally {
+    client.release()
+  }
+}
+
+// Store embedding for a job
+export async function saveJobEmbedding(jobId, embedding) {
+  const client = await pool.connect()
+  try {
+    const embeddingStr = '[' + Array.from(embedding).join(',') + ']'
+    await client.query(
+      'UPDATE jobs SET embedding = $1::vector WHERE id = $2',
+      [embeddingStr, jobId]
+    )
+  } catch (err) {
+    console.error('  ❌ Job embedding save error:', err.message)
+  } finally {
+    client.release()
+  }
+}
+
+// Cosine similarity search — find jobs most similar to resume
+export async function findMatchingJobs(resumeEmbedding, limit = 20) {
+  const client = await pool.connect()
+  try {
+    const result = await client.query(
+      `SELECT id, title, company, location, salary, url, source, posted_at,
+              1 - (embedding <=> $1::vector) AS similarity
+       FROM jobs
+       WHERE embedding IS NOT NULL
+         AND status = 'PENDING'
+       ORDER BY embedding <=> $1::vector
+       LIMIT $2`,
+      [`[${resumeEmbedding.join(',')}]`, limit]
+    )
+    return result.rows
+  } finally {
+    client.release()
+  }
+}
+
+export default pool
