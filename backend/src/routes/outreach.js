@@ -1,4 +1,3 @@
-// src/routes/outreach.js
 import express from 'express'
 import { prisma } from '../db/client.js'
 import { sendOutreach, checkForReplies, sendAllApproved } from '../agents/outreachAgent.js'
@@ -7,15 +6,21 @@ import { linkedInLogin } from '../mcp/linkedinTool.js'
 
 const router = express.Router()
 
-// ─── Gmail OAuth ──────────────────────────────────────────────────────────────
+function requireAdmin(req, res, next) {
+  const token = process.env.APP_ADMIN_TOKEN
+  if (!token) return next()
 
-// GET /auth/gmail — redirect to Google consent screen
+  const authHeader = req.headers.authorization || ''
+  if (authHeader === `Bearer ${token}`) return next()
+
+  return res.status(401).json({ error: 'Unauthorized' })
+}
+
 router.get('/gmail', (req, res) => {
   const url = getAuthUrl()
   res.redirect(url)
 })
 
-// GET /auth/gmail/callback — Google redirects here with code
 router.get('/gmail/callback', async (req, res) => {
   try {
     const { code } = req.query
@@ -31,15 +36,11 @@ router.get('/gmail/callback', async (req, res) => {
   }
 })
 
-// GET /api/outreach/gmail/status — check if Gmail is connected
 router.get('/gmail/status', (req, res) => {
   const tokens = loadTokens()
   res.json({ connected: !!tokens })
 })
 
-// ─── LinkedIn Login ───────────────────────────────────────────────────────────
-
-// POST /api/outreach/linkedin/login
 router.post('/linkedin/login', async (req, res) => {
   try {
     const { email, password } = req.body
@@ -50,10 +51,7 @@ router.post('/linkedin/login', async (req, res) => {
   }
 })
 
-// ─── Send Outreach ────────────────────────────────────────────────────────────
-
-// POST /api/outreach/send
-router.post('/send', async (req, res) => {
+router.post('/send', requireAdmin, async (req, res) => {
   try {
     const { jobId, channel = 'linkedin', founderEmail } = req.body
     if (!jobId) return res.status(400).json({ error: 'jobId required' })
@@ -65,8 +63,7 @@ router.post('/send', async (req, res) => {
   }
 })
 
-// POST /api/outreach/send-all
-router.post('/send-all', async (req, res) => {
+router.post('/send-all', requireAdmin, async (req, res) => {
   try {
     const { channel = 'linkedin' } = req.body
     res.json({ message: 'Sending all approved jobs...', channel })
@@ -76,8 +73,7 @@ router.post('/send-all', async (req, res) => {
   }
 })
 
-// POST /api/outreach/check-replies
-router.post('/check-replies', async (req, res) => {
+router.post('/check-replies', requireAdmin, async (req, res) => {
   try {
     const result = await checkForReplies()
     res.json(result)
@@ -86,9 +82,6 @@ router.post('/check-replies', async (req, res) => {
   }
 })
 
-// ─── Outreach History ─────────────────────────────────────────────────────────
-
-// GET /api/outreach/logs
 router.get('/logs', async (req, res) => {
   try {
     const logs = await prisma.outreachLog.findMany({
@@ -102,10 +95,7 @@ router.get('/logs', async (req, res) => {
   }
 })
 
-// ─── Update draft message ─────────────────────────────────────────────────────
-
-// PATCH /api/outreach/draft/:jobId
-router.patch('/draft/:jobId', async (req, res) => {
+router.patch('/draft/:jobId', requireAdmin, async (req, res) => {
   try {
     const { draftMessage } = req.body
     const job = await prisma.job.update({
