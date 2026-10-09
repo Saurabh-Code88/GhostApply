@@ -1,15 +1,31 @@
-// src/routes/jobs.js
 import express from 'express'
 import multer from 'multer'
+import fs from 'fs'
 import path from 'path'
 import { prisma } from '../db/client.js'
 import { processResume } from '../agents/matchAgent.js'
 import { runFullPipeline } from '../agents/scheduler.js'
 
 const router = express.Router()
-const upload = multer({ dest: 'uploads/' })
 
-// ─── GET /api/jobs — fetch all jobs with filters ──────────────────────────────
+const uploadDir = path.resolve(process.cwd(), 'uploads')
+fs.mkdirSync(uploadDir, { recursive: true })
+
+const upload = multer({
+  dest: uploadDir,
+  limits: { fileSize: 10 * 1024 * 1024 },
+})
+
+function requireAdmin(req, res, next) {
+  const token = process.env.APP_ADMIN_TOKEN
+  if (!token) return next()
+
+  const authHeader = req.headers.authorization || ''
+  if (authHeader === `Bearer ${token}`) return next()
+
+  return res.status(401).json({ error: 'Unauthorized' })
+}
+
 router.get('/', async (req, res) => {
   try {
     const { status, minScore, page = 1, limit = 20 } = req.query
@@ -28,7 +44,6 @@ router.get('/', async (req, res) => {
       prisma.job.count({ where })
     ])
 
-    // Parse fitReason JSON
     const parsed = jobs.map(job => ({
       ...job,
       fitData: (() => {
@@ -42,7 +57,6 @@ router.get('/', async (req, res) => {
   }
 })
 
-// ─── GET /api/jobs/stats ──────────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
     const [total, matched, approved, sent, replied, ghosted] = await Promise.all([
@@ -60,7 +74,6 @@ router.get('/stats', async (req, res) => {
   }
 })
 
-// ─── PATCH /api/jobs/:id — update job status ──────────────────────────────────
 router.patch('/:id', async (req, res) => {
   try {
     const { status, draftMessage } = req.body
@@ -77,7 +90,6 @@ router.patch('/:id', async (req, res) => {
   }
 })
 
-// ─── POST /api/resume/upload ──────────────────────────────────────────────────
 router.post('/resume/upload', upload.single('resume'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
@@ -88,11 +100,9 @@ router.post('/resume/upload', upload.single('resume'), async (req, res) => {
   }
 })
 
-// ─── POST /api/pipeline/run — manual trigger ──────────────────────────────────
-router.post('/pipeline/run', async (req, res) => {
+router.post('/pipeline/run', requireAdmin, async (req, res) => {
   try {
     res.json({ success: true, message: 'Pipeline started — check console for progress' })
-    // Run async after response
     runFullPipeline().catch(console.error)
   } catch (err) {
     res.status(500).json({ error: err.message })
