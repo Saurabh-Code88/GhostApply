@@ -2,37 +2,60 @@
 import { PrismaClient } from '@prisma/client'
 import pg from 'pg'
 
-// Prisma client (for ORM queries)
-export const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: 'postgresql://ghost:ghost123@127.0.0.1:5433/ghostapply'
-    }
+// Prisma client (for ORM queries) — reads DATABASE_URL from .env
+export const prisma = new PrismaClient()
+
+// Parse DATABASE_URL for the raw pg pool (needed for pgvector raw SQL)
+function buildPoolConfig() {
+  const url = process.env.DATABASE_URL
+  if (!url) {
+    throw new Error('DATABASE_URL environment variable is not set')
   }
-})
+
+  try {
+    const parsed = new URL(url)
+    return {
+      host: parsed.hostname,
+      port: parseInt(parsed.port, 10) || 5432,
+      database: parsed.pathname.replace(/^\//, ''),
+      user: parsed.username,
+      password: parsed.password,
+      ssl: parsed.searchParams.get('sslmode') === 'require' ? { rejectUnauthorized: false } : false,
+    }
+  } catch {
+    // Fallback: pass the raw URL string directly
+    return { connectionString: url }
+  }
+}
 
 // Raw pg client (for vector operations - pgvector needs raw SQL)
-const pool = new pg.Pool({
-  host: '127.0.0.1',
-  port: 5433,
-  database: 'ghostapply',
-  user: 'ghost',
-  password: 'ghost123',
-  ssl: false,
-})
+const pool = new pg.Pool(buildPoolConfig())
 
-// Run once on startup - enables pgvector extension
+// Run once on startup - enables pgvector extension and ensures embedding columns exist
 export async function initDB() {
   const client = await pool.connect()
   try {
     await client.query('CREATE EXTENSION IF NOT EXISTS vector')
-    console.log('✅ pgvector extension ready')
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'resumes' AND column_name = 'embedding') THEN
+          ALTER TABLE resumes ADD COLUMN embedding vector(384);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'embedding') THEN
+          ALTER TABLE jobs ADD COLUMN embedding vector(384);
+        END IF;
+      END $$;
+    `)
+    console.log('✅ pgvector extension & embedding columns ready')
+  } catch (err) {
+    console.warn('⚠️ pgvector init warning:', err.message)
   } finally {
     client.release()
   }
 }
 
-// Store embedding for a resume
+// Store embedding for a resume (uses ::vector cast for pgvector)
 export async function saveResumeEmbedding(resumeId, embedding) {
   const client = await pool.connect()
   try {
@@ -49,7 +72,7 @@ export async function saveResumeEmbedding(resumeId, embedding) {
   }
 }
 
-// Store embedding for a job
+// Store embedding for a job (uses ::vector cast for pgvector)
 export async function saveJobEmbedding(jobId, embedding) {
   const client = await pool.connect()
   try {

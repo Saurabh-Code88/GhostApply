@@ -5,7 +5,8 @@ import { chromium } from 'playwright'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 import { prisma } from '../db/client.js'
-import { generateEmbedding, saveJobEmbedding } from '../utils/embeddings.js'
+import { generateEmbedding } from '../utils/embeddings.js'
+import { saveJobEmbedding } from '../db/client.js'
 
 const INDEED_PAGES_PER_QUERY = 2
 const INDEED_SEARCH_KEYWORDS = [
@@ -156,6 +157,19 @@ function normalizeIndeedUrl(rawUrl) {
 
     if (jk) return `https://in.indeed.com/viewjob?jk=${jk}`
     return cleanUrl(url.href)
+  } catch {
+    return rawUrl
+  }
+}
+
+// Strip LinkedIn tracking query parameters to get a stable canonical URL
+function normalizeLinkedInUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl)
+    // Remove all query params (trackingId etc)
+    url.search = ''
+    url.hash = ''
+    return url.href.replace(/\/$/, '')
   } catch {
     return rawUrl
   }
@@ -499,6 +513,9 @@ async function scrapeLinkedIn(page, keywords = LINKEDIN_SEARCH_KEYWORDS) {
         const linkEl = card.querySelector('a.base-card__full-link')
         const timeEl = card.querySelector('time')
 
+        const cardText = card.innerText?.toLowerCase() || ''
+        const isClosed = cardText.includes('no longer accepting applications')
+
         return {
           title: titleEl?.innerText?.trim() || '',
           company: companyEl?.innerText?.trim() || '',
@@ -506,16 +523,20 @@ async function scrapeLinkedIn(page, keywords = LINKEDIN_SEARCH_KEYWORDS) {
           url: linkEl?.href || '',
           description: '',
           postedAt: timeEl?.getAttribute('datetime') || null,
-          source: 'linkedin'
+          source: 'linkedin',
+          isClosed
         }
       }).filter(job =>
         job.title
         && job.url
+        && !job.isClosed
         && !/\b(manager|lead|senior|principal|staff|architect|director|head)\b/i.test(job.title)
       )
     })
 
-    const relevantJobs = extracted.filter(isRelevantTechJob)
+    const relevantJobs = extracted
+      .filter(isRelevantTechJob)
+      .map(job => ({ ...job, url: normalizeLinkedInUrl(job.url) }))
     jobs.push(...relevantJobs)
     console.log(`  ↳ Found ${relevantJobs.length} jobs`)
     await page.waitForTimeout(2000)
@@ -534,6 +555,18 @@ async function fetchJobDescription(page, job) {
     await page.waitForTimeout(1200)
 
     if (job.source === 'indeed') {
+      const isClosed = await page.evaluate(() => {
+        const text = document.body.innerText.toLowerCase();
+        return text.includes('job has expired') || 
+               text.includes('no longer available') || 
+               text.includes('expired');
+      });
+
+      if (isClosed) {
+        job.isClosed = true;
+        return '';
+      }
+
       const description = await page.evaluate(() => {
         const clean = (value = '') => value.replace(/\s+/g, ' ').trim()
         const blockedText = clean(document.body.innerText || '').toLowerCase()
@@ -560,6 +593,21 @@ async function fetchJobDescription(page, job) {
     }
 
     if (job.source === 'linkedin') {
+      const isClosed = await page.evaluate(() => {
+        const text = document.body.innerText.toLowerCase();
+        return text.includes('no longer accepting applications') ||
+               text.includes('job is closed') ||
+               text.includes('position is closed') ||
+               text.includes('no longer active') ||
+               !!document.querySelector('.artdeco-inline-feedback--error') ||
+               !!document.querySelector('.jobs-search-closed-banner');
+      });
+
+      if (isClosed) {
+        job.isClosed = true;
+        return '';
+      }
+
       return await page.$eval(
         '.show-more-less-html__markup, .description__text',
         el => el.innerText.trim()
@@ -573,11 +621,12 @@ async function fetchJobDescription(page, job) {
 }
 
 // Save to DB
-async function saveJobs(jobs) {
+async function saveJobs(jobs, userId) {
   let saved = 0
   let skipped = 0
   const jobIds = []
   const existingJobs = await prisma.job.findMany({
+    where: { userId },
     select: { title: true, company: true, url: true }
   })
   const existingUrls = new Set(existingJobs.map(job => job.url))
@@ -613,7 +662,8 @@ async function saveJobs(jobs) {
           url: job.url,
           source: job.source,
           postedAt: job.postedAt ? new Date(job.postedAt) : null,
-          status: 'PENDING'
+          status: 'PENDING',
+          ...(userId && userId !== 'default' ? { userId } : {})
         }
       })
 
@@ -644,8 +694,23 @@ async function saveJobs(jobs) {
 }
 
 // Main Hunt Function
-export async function runHuntAgent() {
-  console.log('\n👻 GhostApply - HUNT AGENT starting...\n')
+// options.keywords: string[] from resume profile (optional — falls back to hardcoded)
+export async function runHuntAgent(options = {}) {
+  const resumeKeywords = Array.isArray(options.keywords) && options.keywords.length > 0
+    ? options.keywords
+    : null
+
+  const indeedKeywords = resumeKeywords || INDEED_SEARCH_KEYWORDS
+  const linkedinKeywords = resumeKeywords
+    ? resumeKeywords.map(k => k.includes('India') ? k : `${k} India`)
+    : LINKEDIN_SEARCH_KEYWORDS
+
+  if (resumeKeywords) {
+    console.log(`\n👻 GhostApply - HUNT AGENT starting (resume-based keywords)...\n`)
+    console.log(`  Using ${resumeKeywords.length} keywords from resume profile`)
+  } else {
+    console.log('\n👻 GhostApply - HUNT AGENT starting (default keywords)...\n')
+  }
 
   const browser = await chromium.launch({
     headless: true,
@@ -662,8 +727,8 @@ export async function runHuntAgent() {
   const page = await context.newPage()
 
   try {
-    const indeedJobs = await scrapeIndeed(page)
-    const linkedInJobs = await scrapeLinkedIn(page)
+    const indeedJobs = await scrapeIndeed(page, indeedKeywords)
+    const linkedInJobs = await scrapeLinkedIn(page, linkedinKeywords)
     const allJobs = [...indeedJobs, ...linkedInJobs]
     const relevantJobs = allJobs.filter(isRelevantTechJob)
 
@@ -679,16 +744,45 @@ export async function runHuntAgent() {
       return true
     })
 
-    for (const job of uniqueJobs) {
+    // Pre-filter against DB to avoid fetching descriptions for jobs we already have
+    const existingJobs = await prisma.job.findMany({ select: { title: true, company: true, url: true } })
+    const existingUrls = new Set(existingJobs.map(j => j.url))
+    const existingKeys = new Set(existingJobs.map(normalizeJobKey))
+    
+    const newJobs = uniqueJobs.filter(job => {
+      return !existingUrls.has(job.url) && !existingKeys.has(normalizeJobKey(job))
+    })
+
+    const skippedCount = uniqueJobs.length - newJobs.length;
+    if (skippedCount > 0) {
+      console.log(`  ↳ Skipped ${skippedCount} jobs that already exist in database`)
+    }
+
+    if (newJobs.length > 0) {
+      console.log(`  ↳ Need to fetch full descriptions for ${newJobs.length} new jobs...`)
+    }
+
+    for (let i = 0; i < newJobs.length; i++) {
+      const job = newJobs[i];
       if (shouldFetchDescription(job)) {
+        process.stdout.write(`    [${i + 1}/${newJobs.length}] Fetching ${job.company}... `)
         job.description = await fetchJobDescription(page, job)
+        console.log('Done.')
       }
     }
 
-    const { saved, skipped, jobIds } = await saveJobs(uniqueJobs)
-    console.log(`\n✅ Hunt complete: ${saved} new jobs saved, ${skipped} already existed`)
+    // Filter out jobs that were closed/expired
+    const openNewJobs = newJobs.filter(j => !j.isClosed)
+    const closedCount = newJobs.length - openNewJobs.length
+    if (closedCount > 0) {
+      console.log(`  ↳ Filtered out ${closedCount} closed jobs (no longer accepting applications)`)
+    }
 
-    return { saved, skipped, total: allJobs.length, relevant: relevantJobs.length, unique: uniqueJobs.length, jobIds }
+    const { saved, skipped, jobIds } = await saveJobs(openNewJobs, options.userId)
+    // Add back the pre-filtered skipped count for the final log
+    console.log(`\n✅ Hunt complete: ${saved} new jobs saved, ${skipped + skippedCount + closedCount} already existed or were closed`)
+
+    return { saved, skipped: skipped + skippedCount, total: allJobs.length, relevant: relevantJobs.length, unique: uniqueJobs.length, jobIds }
   } finally {
     await browser.close()
   }

@@ -7,17 +7,46 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  password         String
+  name             String?
+  status           String?  // "fresher" | "student" | "working-junior" | "working-mid" | "working-senior"
+  location         String?
+  targetJobs       String?  @map("targetjobs")   // JSON array of job title strings (optional)
+  securityQuestion String?  @map("securityquestion") // e.g. "What is your pet's name?"
+  securityAnswer   String?  @map("securityanswer")   // bcrypt-hashed answer
+  isOnboarded      Boolean  @default(false)       @map("isonboarded")
+  createdAt        DateTime @default(now())       @map("createdat")
+  updatedAt        DateTime @updatedAt            @map("updatedat")
+
+  resumes      Resume[]
+  jobs         Job[]
+  schedules    Schedule[]
+
+  @@map("users")
+}
+
 model Resume {
-  id        String   @id @default(cuid())
-  userId    String   @unique @map("userid")
-  content   String
-  createdAt DateTime @default(now()) @map("createdat")
-  updatedAt DateTime @updatedAt @map("updatedat")
+  id              String   @id @default(cuid())
+  userId          String   @unique @map("userid")
+  user            User     @relation(fields: [userId], references: [id])
+  content         String
+  targetRoles     String?  @map("targetroles")    // JSON array of role titles
+  targetSkills    String?  @map("targetskills")   // JSON array of skills
+  searchKeywords  String?  @map("searchkeywords") // JSON array of search query strings
+  experienceLevel String?  @map("experiencelevel") // "fresher", "0-1yr", etc.
+  createdAt       DateTime @default(now()) @map("createdat")
+  updatedAt       DateTime @updatedAt @map("updatedat")
 
   @@map("resumes")
 }
+
 model Job {
   id              String    @id @default(cuid())
+  userId          String?   @map("userid")        // nullable for migration compat
+  user            User?     @relation(fields: [userId], references: [id])
   title           String
   company         String
   location        String?
@@ -62,7 +91,7 @@ enum JobStatus {
   PENDING
   MATCHED
   SKIPPED
-  APPROVED
+  SELECTED
   SENT
   REPLIED
   GHOSTED
@@ -77,4 +106,20 @@ enum OutreachStatus {
   GHOSTED
 
   @@map("outreachstatus")
+}
+
+model Schedule {
+  id          String    @id @default(cuid())
+  userId      String    @map("userid")
+  user        User      @relation(fields: [userId], references: [id])
+  name        String    @default("Daily Hunt")
+  cronExpr    String    @map("cronexpr")
+  timezone    String    @default("Asia/Kolkata")
+  enabled     Boolean   @default(true)
+  lastRunAt   DateTime? @map("lastrunat")
+  nextRunAt   DateTime? @map("nextrunat")
+  createdAt   DateTime  @default(now()) @map("createdat")
+  updatedAt   DateTime  @updatedAt      @map("updatedat")
+
+  @@map("schedules")
 }

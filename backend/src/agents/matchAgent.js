@@ -8,11 +8,68 @@ import { generateEmbedding, cosineSimilarity, similarityToScore } from '../utils
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
 
-const MATCH_THRESHOLD = 65
-const MIN_VECTOR_SCORE_FOR_ANALYSIS = 35
-const MIN_VECTOR_SCORE_FOR_MATCH = 42
-const VECTOR_WEIGHT = 0.65
-const GROQ_WEIGHT = 0.35
+const MATCH_THRESHOLD = 52
+const MIN_VECTOR_SCORE_FOR_ANALYSIS = 25
+const MIN_VECTOR_SCORE_FOR_MATCH = 30
+const VECTOR_WEIGHT = 0.30
+const GROQ_WEIGHT = 0.70
+
+// ─── Extract Role Profile from Resume ────────────────────────────────────────
+// Called once on resume upload. Returns structured JSON for dynamic keyword gen.
+export async function extractRoleProfile(resumeText) {
+  try {
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [{
+        role: 'user',
+        content: `You are a career analyst. Analyze this resume and extract the job search profile for this candidate.
+
+RESUME:
+${resumeText.slice(0, 3500)}
+
+Respond ONLY in this exact JSON format (no markdown, no extra text):
+{
+  "roles": ["<3-5 job title targets, specific and realistic for this candidate's level>"],
+  "skills": ["<top 8 technical skills found in resume>"],
+  "experienceLevel": "<fresher|0-1yr|1-2yr|2-3yr>",
+  "location": "India",
+  "searchKeywords": [
+    "<8-10 specific search query strings for job boards, combine role+skill+level, include India>",
+    "example: junior backend developer node.js India",
+    "example: fresher software engineer MERN India"
+  ]
+}`
+      }],
+      temperature: 0.1,
+      max_tokens: 600,
+    })
+
+    const text = response.choices[0].message.content.trim()
+    const json = text.match(/\{[\s\S]*\}/)?.[0] || text
+    const profile = JSON.parse(json)
+
+    // Validate and sanitize
+    return {
+      roles: Array.isArray(profile.roles) ? profile.roles.slice(0, 6) : [],
+      skills: Array.isArray(profile.skills) ? profile.skills.slice(0, 10) : [],
+      experienceLevel: profile.experienceLevel || 'fresher',
+      searchKeywords: Array.isArray(profile.searchKeywords) ? profile.searchKeywords.slice(0, 12) : [],
+    }
+  } catch (err) {
+    console.log('  ⚠️ Role profile extraction failed, using defaults:', err.message)
+    return {
+      roles: ['Software Engineer', 'Backend Developer', 'Full Stack Developer'],
+      skills: ['JavaScript', 'Node.js', 'React'],
+      experienceLevel: 'fresher',
+      searchKeywords: [
+        'fresher software engineer India',
+        'junior backend developer node.js India',
+        'entry level full stack developer India',
+        'mern stack developer fresher India',
+      ],
+    }
+  }
+}
 
 export async function processResume(pdfPath, userId = 'default') {
   console.log('Processing resume...')
@@ -21,16 +78,35 @@ export async function processResume(pdfPath, userId = 'default') {
   const resumeText = data.text.replace(/\s+/g, ' ').trim()
   console.log(`  -> Extracted ${resumeText.length} characters`)
 
+  // Extract role profile BEFORE saving (so we have keywords ready)
+  console.log('  🤖 Extracting role profile from resume...')
+  const profile = await extractRoleProfile(resumeText)
+  console.log(`  ✅ Roles: ${profile.roles.join(', ')}`)
+  console.log(`  ✅ Keywords: ${profile.searchKeywords.length} search queries generated`)
+
   const resume = await prisma.resume.upsert({
     where: { userId },
-    create: { userId, content: resumeText },
-    update: { content: resumeText }
+    create: {
+      userId,
+      content: resumeText,
+      targetRoles: JSON.stringify(profile.roles),
+      targetSkills: JSON.stringify(profile.skills),
+      searchKeywords: JSON.stringify(profile.searchKeywords),
+      experienceLevel: profile.experienceLevel,
+    },
+    update: {
+      content: resumeText,
+      targetRoles: JSON.stringify(profile.roles),
+      targetSkills: JSON.stringify(profile.skills),
+      searchKeywords: JSON.stringify(profile.searchKeywords),
+      experienceLevel: profile.experienceLevel,
+    }
   })
 
   const embedding = await generateEmbedding(resumeText)
   await saveResumeEmbedding(resume.id, embedding)
   console.log('  -> Resume embedded and saved')
-  return { resume, embedding }
+  return { resume, embedding, profile }
 }
 
 async function analyzeWithGroq(resumeText, job) {
@@ -55,7 +131,7 @@ Analyze the fit and respond in this EXACT JSON format (no markdown, no extra tex
 }`
 
   const response = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama-3.1-8b-instant',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.2,
     max_tokens: 500,
@@ -111,7 +187,7 @@ export function analyzeRoleFit(job) {
   }
 
   const hasFrontend = /\b(frontend|front-end|front end|ui developer|react developer|angular developer|vue developer)\b/.test(text)
-  const hasBackend = /\b(backend|back-end|back end|full stack|fullstack|mern|node|node\.js|express|api|server|postgres|postgresql|redis|websocket|software engineer|software developer)\b/.test(text)
+  const hasBackend = /\b(backend|back-end|back end|full.?stack|fullstack|mern|node|node\.js|express|api|server|postgres|postgresql|redis|websocket|software engineer|software developer|sde)\b/.test(text)
 
   if (hasFrontend && !hasBackend) {
     penalty += 12
@@ -143,7 +219,7 @@ export function analyzeRoleFit(job) {
   const signalCount = targetSignals.filter(pattern => pattern.test(text)).length
   bonus += Math.min(signalCount * 2, 10)
 
-  if (!hasBackend && !/\bsoftware engineer|software developer|sde\b/.test(text)) {
+  if (!hasBackend && !/\b(software engineer|software developer|sde|full.?stack|fullstack)\b/.test(text)) {
     penalty += 10
     reasons.push('weak software/backend signal')
   }
@@ -158,22 +234,20 @@ export function calibrateScore(vectorScore, groqScore, job) {
 
   if (roleFit.hardSkip) {
     return {
-      finalScore: Math.min(45, Math.max(0, safeVectorScore - roleFit.penalty)),
+      finalScore: Math.min(40, Math.max(0, safeVectorScore - roleFit.penalty)),
       roleFit,
       cappedGroqScore: safeGroqScore,
       capReason: 'Hard-skipped senior/leadership role.'
     }
   }
 
-  let maxGroqBoost = 14
-  if (safeVectorScore < 35) maxGroqBoost = 4
-  else if (safeVectorScore < MIN_VECTOR_SCORE_FOR_MATCH) maxGroqBoost = 8
-
-  const cappedGroqScore = Math.min(safeGroqScore, safeVectorScore + maxGroqBoost)
-  const blendedScore = (safeVectorScore * VECTOR_WEIGHT) + (cappedGroqScore * GROQ_WEIGHT)
+  const vectorConfidenceModifier = safeVectorScore < 30 ? -5 : safeVectorScore < 35 ? -2 : 0
+  const adjustedGroqScore = safeGroqScore + vectorConfidenceModifier
+  const blendedScore = (safeVectorScore * VECTOR_WEIGHT) + (adjustedGroqScore * GROQ_WEIGHT)
   const adjustedScore = blendedScore + roleFit.bonus - roleFit.penalty
 
   let finalScore = clampScore(adjustedScore)
+
   if (safeVectorScore < MIN_VECTOR_SCORE_FOR_MATCH) {
     finalScore = Math.min(finalScore, MATCH_THRESHOLD - 1)
   }
@@ -181,9 +255,9 @@ export function calibrateScore(vectorScore, groqScore, job) {
   return {
     finalScore,
     roleFit,
-    cappedGroqScore,
-    capReason: cappedGroqScore < safeGroqScore
-      ? `Groq score capped from ${safeGroqScore} to ${cappedGroqScore}.`
+    cappedGroqScore: adjustedGroqScore,
+    capReason: vectorConfidenceModifier < 0
+      ? `Low vector confidence (${safeVectorScore}) applied ${vectorConfidenceModifier} adjustment to Groq score.`
       : ''
   }
 }
@@ -238,37 +312,38 @@ export async function runMatchAgent(userId = 'default', options = {}) {
     throw new Error('Resume embedding not found. Re-upload your resume.')
   }
 
-  const hasScopedJobIds = Array.isArray(options.jobIds)
+  const hasScopedJobIds = Array.isArray(options.jobIds) && options.jobIds.length > 0
   const scopedJobIds = hasScopedJobIds
     ? Array.from(new Set(options.jobIds.filter(Boolean)))
     : []
 
-  if (hasScopedJobIds && !scopedJobIds.length) {
-    console.log('No new jobs from this hunt to score.\n')
-    return { matched: 0, skipped: 0, matchedJobIds: [] }
-  }
-
   const pendingJobs = await prisma.job.findMany({
     where: hasScopedJobIds
-      ? { id: { in: scopedJobIds }, status: 'PENDING' }
-      : { status: 'PENDING' },
-    orderBy: [
-      { createdAt: 'desc' },
-      { id: 'desc' }
-    ],
+      ? { id: { in: scopedJobIds }, status: 'PENDING', userId }
+      : { status: 'PENDING', userId },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     ...(hasScopedJobIds ? {} : { take: 50 })
   })
 
+  const seenJobKeys = new Set()
+  const dequedJobs = pendingJobs.filter(job => {
+    const key = `${(job.title || '').toLowerCase().trim()}::${(job.company || '').toLowerCase().trim()}`
+    if (seenJobKeys.has(key)) return false
+    seenJobKeys.add(key)
+    return true
+  })
+  const dedupedCount = pendingJobs.length - dequedJobs.length
+
   console.log(hasScopedJobIds
-    ? `Scoring ${pendingJobs.length} fresh jobs from this hunt...\n`
-    : `Scoring ${pendingJobs.length} pending jobs...\n`
+    ? `Scoring ${dequedJobs.length} fresh jobs from this hunt...\n`
+    : `Scoring ${dequedJobs.length} pending jobs${dedupedCount > 0 ? ` (${dedupedCount} title+company dupes skipped)` : ''}...\n`
   )
 
   let matched = 0
   let skipped = 0
   const matchedJobIds = []
 
-  for (const job of pendingJobs) {
+  for (const job of dequedJobs) {
     try {
       const precheck = analyzeRoleFit(job)
       if (precheck.hardSkip || precheck.penalty >= 20) {
@@ -297,13 +372,11 @@ export async function runMatchAgent(userId = 'default', options = {}) {
 
       if (!jobEmbedding || !jobEmbedding.length) {
         const embeddingText = buildJobEmbeddingText(job)
-
         if (embeddingText.length < 30) {
           console.log(`  -> No embedding text: ${job.title} @ ${job.company}`)
           skipped++
           continue
         }
-
         console.log(`  -> Backfilling embedding: ${job.title} @ ${job.company}`)
         jobEmbedding = await generateEmbedding(embeddingText)
         await saveJobEmbedding(job.id, jobEmbedding)
@@ -311,7 +384,6 @@ export async function runMatchAgent(userId = 'default', options = {}) {
 
       const similarity = cosineSimilarity(resumeEmbedding, jobEmbedding)
       const vectorScore = similarityToScore(similarity)
-
       console.log(`  -> Vector score ${vectorScore}: ${job.title} @ ${job.company}`)
 
       if (isNaN(vectorScore) || vectorScore < MIN_VECTOR_SCORE_FOR_ANALYSIS) {
@@ -333,21 +405,21 @@ export async function runMatchAgent(userId = 'default', options = {}) {
         continue
       }
 
-      let finalScore = vectorScore
-      let fitReason = {}
+      let analysis = { score: vectorScore, matchedSkills: [], missingSkills: [], talkingPoint: '' }
+      let usedGroq = false
 
       try {
-        const analysis = await analyzeWithGroq(resume.content, job)
-        const calibration = calibrateScore(vectorScore, analysis.score, job)
-        finalScore = calibration.finalScore
-        fitReason = buildFitReason({ analysis, vectorScore, calibration, usedGroq: true })
-      } catch {
-        console.log(`  -> Groq skipped, using calibrated vector score: ${vectorScore}`)
-        const analysis = { score: vectorScore, matchedSkills: [], missingSkills: [], talkingPoint: '' }
-        const calibration = calibrateScore(vectorScore, vectorScore, job)
-        finalScore = calibration.finalScore
-        fitReason = buildFitReason({ analysis, vectorScore, calibration, usedGroq: false })
+        const resumeForGroq = resume.content.slice(0, 3000)
+        analysis = await analyzeWithGroq(resumeForGroq, job)
+        usedGroq = true
+        console.log(`  -> Groq score ${analysis.score}: ${job.title} @ ${job.company}`)
+      } catch (groqErr) {
+        console.log(`  -> Groq failed, using vector only: ${groqErr.message}`)
       }
+
+      const calibration = calibrateScore(vectorScore, usedGroq ? analysis.score : vectorScore, job)
+      const finalScore = calibration.finalScore
+      const fitReason = buildFitReason({ analysis, vectorScore, calibration, usedGroq })
 
       await prisma.job.update({
         where: { id: job.id },
@@ -367,7 +439,7 @@ export async function runMatchAgent(userId = 'default', options = {}) {
         skipped++
       }
 
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise(resolve => setTimeout(resolve, usedGroq ? 1000 : 500))
     } catch (err) {
       console.error(`  -> Error scoring ${job.id}:`, err.message)
     }

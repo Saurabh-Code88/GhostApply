@@ -8,7 +8,7 @@ import {
   draft_cold_message
 } from '../mcp/mcpServer.js'
 
-const MIN_RESEARCH_SCORE = 65
+const MIN_RESEARCH_SCORE = 52
 
 function buildResumeSummary(resumeText) {
   const lines = resumeText.split('\n').filter(line => line.trim().length > 20)
@@ -38,15 +38,10 @@ function isResearchWorthy(job) {
 export async function runResearchAgent(userId = 'default', options = {}) {
   console.log('\nGhostApply - RESEARCH AGENT starting...\n')
 
-  const hasScopedJobIds = Array.isArray(options.jobIds)
+  const hasScopedJobIds = Array.isArray(options.jobIds) && options.jobIds.length > 0
   const scopedJobIds = hasScopedJobIds
     ? Array.from(new Set(options.jobIds.filter(Boolean)))
     : []
-
-  if (hasScopedJobIds && !scopedJobIds.length) {
-    console.log('No freshly matched jobs to research.')
-    return { researched: 0 }
-  }
 
   const matchedCandidates = await prisma.job.findMany({
     where: {
@@ -56,9 +51,24 @@ export async function runResearchAgent(userId = 'default', options = {}) {
       ...(hasScopedJobIds ? { id: { in: scopedJobIds } } : {})
     },
     orderBy: { fitScore: 'desc' },
-    ...(hasScopedJobIds ? {} : { take: 50 })
+    ...(hasScopedJobIds ? {} : { take: 100 })
   })
-  const matchedJobs = matchedCandidates.filter(isResearchWorthy).slice(0, 20)
+
+  // Deduplicate by company — only research the best-scoring job per company
+  const seenCompanies = new Set()
+  const dedupedCandidates = matchedCandidates.filter(job => {
+    const key = `${(job.company || '').toLowerCase().trim()}::${(job.title || '').toLowerCase().trim()}`
+    const companyKey = (job.company || '').toLowerCase().trim()
+    if (seenCompanies.has(companyKey)) return false
+    seenCompanies.add(companyKey)
+    return true
+  })
+
+  const matchedJobs = dedupedCandidates.filter(isResearchWorthy).slice(0, 20)
+  const dupCount = matchedCandidates.length - dedupedCandidates.length
+  if (dupCount > 0) {
+    console.log(`  ↳ Skipped ${dupCount} duplicate company listings (kept best score per company)`)
+  }
 
   if (!matchedJobs.length) {
     console.log('No new calibrated matches to research.')
@@ -78,7 +88,8 @@ export async function runResearchAgent(userId = 'default', options = {}) {
     try {
       const founderInfo = await fetch_founder_info({
         companyName: job.company,
-        companyUrl: job.url
+        companyUrl: job.url,
+        jobDescription: job.description || ''
       })
 
       const newsData = await fetch_company_news({ companyName: job.company })

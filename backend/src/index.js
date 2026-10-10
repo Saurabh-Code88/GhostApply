@@ -6,24 +6,30 @@ import { initDB } from './db/client.js'
 import { startScheduler } from './agents/scheduler.js'
 import jobsRouter from './routes/jobs.js'
 import outreachRouter from './routes/outreach.js'
+import authRouter from './routes/auth.js'
+import scheduleRouter from './routes/schedule.js'
+import { requireAuth } from './middleware/requireAuth.js'
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }))
 app.use(express.json())
 
-// Routes
-app.use('/api/jobs', jobsRouter)
-app.use('/api/outreach', outreachRouter)
-app.use('/auth', outreachRouter)
+// Public routes (no auth needed)
+app.use('/auth', authRouter)
 
-// Health check
+// Health check (public)
 app.get('/health', (_, res) => res.json({
   status: 'ok',
   timestamp: new Date().toISOString(),
   message: '👻 GhostApply is hunting...'
 }))
+
+// Protected routes — require valid JWT
+app.use('/api/jobs', requireAuth, jobsRouter)
+app.use('/api/outreach', requireAuth, outreachRouter)
+app.use('/api/schedules', requireAuth, scheduleRouter)
 
 // Startup
 async function start() {

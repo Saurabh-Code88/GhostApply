@@ -10,6 +10,10 @@ const HF_API_KEY = process.env.HUGGINGFACE_API_KEY
 
 // Generate embedding for any text
 export async function generateEmbedding(text) {
+  if (!HF_API_KEY) {
+    throw new Error('HUGGINGFACE_API_KEY environment variable is not set')
+  }
+
   const cleaned = text.replace(/\s+/g, ' ').trim().slice(0, 4000)
 
   console.log('  🔄 Calling HuggingFace API...')
@@ -39,31 +43,21 @@ export async function generateEmbedding(text) {
 
 // Compute cosine similarity between two vectors
 export function cosineSimilarity(vecA, vecB) {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return 0
   const dot = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0)
   const magA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0))
   const magB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0))
+  if (magA === 0 || magB === 0) return 0
   return dot / (magA * magB)
 }
 
-// Convert similarity (0-1) to fit score (0-100)
+// Convert similarity (-1 to 1) to fit score (0–100)
 export function similarityToScore(similarity) {
-  return Math.round(similarity * 100)
+  // Clamp to [0, 1] first (cosine similarity is -1..1 but embeddings are usually >=0)
+  const clamped = Math.max(0, Math.min(1, similarity))
+  return Math.round(clamped * 100)
 }
 
-// Save resume embedding to DB
-export async function saveResumeEmbedding(resumeId, embedding) {
-  const { default: pool } = await import('../db/client.js')
-  await pool.query(
-    'UPDATE resumes SET embedding = $1 WHERE id = $2',
-    [JSON.stringify(embedding), resumeId]
-  )
-}
-
-// Save job embedding to DB
-export async function saveJobEmbedding(jobId, embedding) {
-  const { default: pool } = await import('../db/client.js')
-  await pool.query(
-    'UPDATE jobs SET embedding = $1 WHERE id = $2',
-    [JSON.stringify(embedding), jobId]
-  )
-}
+// NOTE: saveResumeEmbedding and saveJobEmbedding are defined in db/client.js
+// (they use the correct ::vector cast for pgvector).
+// Do NOT redefine them here — import from db/client.js instead.

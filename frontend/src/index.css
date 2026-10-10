@@ -1,0 +1,592 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f7f7f6;
+  --bg-hover: #f0f0ef;
+  --border: #e5e5e4;
+  --border-strong: #d0d0ce;
+  --text: #0a0a0a;
+  --text-2: #4a4a48;
+  --text-3: #8a8a88;
+  --text-4: #b8b8b6;
+  --accent: #4f46e5;
+  --accent-bg: rgba(99,102,241,0.06);
+  --accent-hover: #4338ca;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --green-border: #bbf7d0;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
+  --amber-border: #fde68a;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --red-border: #fecaca;
+  --purple: #7c3aed;
+  --purple-bg: #faf5ff;
+  --purple-border: #ddd6fe;
+  --blue: #2563eb;
+  --blue-bg: #eff6ff;
+  --blue-border: #bfdbfe;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,0.10), 0 4px 12px rgba(0,0,0,0.06);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ─── Scrollbar ──────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+
+/* ─── Buttons ────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+
+.btn-secondary {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--bg-subtle); border-color: var(--text-3); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-2);
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+
+.btn-success {
+  background: var(--green-bg);
+  color: var(--green);
+  border-color: var(--green-border);
+}
+.btn-success:hover:not(:disabled) { background: #dcfce7; }
+
+.btn-danger {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: var(--red-border);
+}
+
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+.btn-lg { padding: 11px 22px; font-size: 14px; font-weight: 600; }
+.btn-xl { padding: 14px 28px; font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+
+/* ─── Card ───────────────────────────────────── */
+.card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ─── Input / Textarea ───────────────────────── */
+.input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus { border-color: var(--accent); }
+
+.textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg-subtle);
+  resize: vertical;
+  min-height: 160px;
+  outline: none;
+  line-height: 1.65;
+  transition: border-color 0.15s;
+}
+.textarea:focus { border-color: var(--accent); background: var(--bg); }
+
+/* ─── Badge / Pill ───────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Divider ────────────────────────────────── */
+.divider { height: 1px; background: var(--border); margin: 0; }
+
+/* ─── Animations ─────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+.fade-in  { animation: fadeIn 0.25s ease-out both; }
+.slide-in { animation: slideInRight 0.25s ease-out both; }
+
+.spinner {
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-subtle) 25%, var(--bg-hover) 50%, var(--bg-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ─── Score Ring Colors ──────────────────────── */
+.score-high { color: var(--green); }
+.score-mid  { color: var(--amber); }
+.score-low  { color: var(--red); }
+
+/* ─── Status Pill Variants ───────────────────── */
+.status-matched  { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
+.status-selected { background: var(--blue-bg);   color: var(--blue);   border: 1px solid var(--blue-border);  }
+.status-sent     { background: var(--amber-bg);  color: var(--amber);  border: 1px solid var(--amber-border); }
+.status-replied  { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-border);}
+.status-ghosted  { background: var(--bg-subtle); color: var(--text-3); border: 1px solid var(--border); }
+.status-skipped  { background: var(--bg-subtle); color: var(--text-4); border: 1px solid var(--border); }
+.status-pending  { background: var(--bg-subtle); color: var(--text-4); border: 1px solid var(--border); }
+
+/* ─── Dot indicator ──────────────────────────── */
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-green  { background: var(--green);  box-shadow: 0 0 0 3px var(--green-bg); }
+.dot-amber  { background: var(--amber);  box-shadow: 0 0 0 3px var(--amber-bg); }
+.dot-grey   { background: var(--text-4); }
+.dot-pulse  { animation: pulse 1.8s ease-in-out infinite; }
+
+/* ─── Upload zone ────────────────────────────── */
+.upload-zone {
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 56px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: var(--bg);
+}
+.upload-zone:hover, .upload-zone.dragging {
+  border-color: var(--accent);
+  background: var(--bg-subtle);
+}
+
+/* ─── Nav tab underline ──────────────────────── */
+.nav-tab {
+  padding: 10px 2px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-3);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.nav-tab:hover { color: var(--text-2); }
+.nav-tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* ─── Filter chips ───────────────────────────── */
+.filter-chip {
+  padding: 5px 13px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-3);
+  transition: all 0.15s;
+  font-family: var(--font);
+}
+.filter-chip:hover { border-color: var(--text-3); color: var(--text-2); }
+.filter-chip.active { border-color: var(--accent); color: var(--accent); background: var(--bg-subtle); font-weight: 600; }
+
+/* ─── Skill pill ─────────────────────────────── */
+.skill-match { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 500; }
+.skill-miss  { background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border);   font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 500; }
+
+/* ─── Slide panel overlay ────────────────────── */
+.panel-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: blur(2px);
+  z-index: 80;
+  animation: fadeIn 0.2s ease;
+}
+.panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(560px, 100vw);
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  z-index: 81;
+  display: flex; flex-direction: column;
+  animation: slideInRight 0.25s ease-out;
+}
+
+/* ─── Stat card ──────────────────────────────── */
+.stat-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+/* ─── Empty state ────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 64px 24px;
+  color: var(--text-3);
+}
+.empty-state h3 { font-size: 15px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.empty-state p  { font-size: 13px; line-height: 1.6; }
+
+/* ─── Progress bar ───────────────────────────── */
+.progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width 0.6s ease;
+}
+
+/* ─── Toggle Switch ──────────────────────────── */
+.toggle-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 99px;
+  background: var(--border-strong);
+  transition: background 0.2s ease;
+}
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+}
+.toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease;
+}
+.toggle-switch input:checked ~ .toggle-knob {
+  transform: translateX(16px);
+}
+
+/* ─── Schedule Card ──────────────────────────── */
+.schedule-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  transition: all 0.15s ease;
+}
+.schedule-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.schedule-card.disabled {
+  opacity: 0.5;
+}
+
+/* ─── Collapsible Section ────────────────────── */
+.collapsible-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font);
+  color: var(--text);
+  transition: color 0.15s;
+}
+.collapsible-trigger:hover {
+  color: var(--accent);
+}
+.collapsible-arrow {
+  display: inline-flex;
+  font-size: 12px;
+  color: var(--text-4);
+  transition: transform 0.25s ease;
+}
+.collapsible-arrow.open {
+  transform: rotate(180deg);
+}
+.collapsible-body {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease;
+  max-height: 0;
+  opacity: 0;
+}
+.collapsible-body.open {
+  max-height: 800px;
+  opacity: 1;
+}
+
+/* ─── Cron Picker ────────────────────────────── */
+.cron-option {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  transition: all 0.15s ease;
+  text-align: left;
+  width: 100%;
+}
+.cron-option:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+.cron-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ─── Profile Section ────────────────────────── */
+.profile-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid rgba(99,102,241,0.15);
+}
+.profile-tag .remove-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  padding: 0;
+  line-height: 1;
+  font-size: 14px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.profile-tag .remove-btn:hover {
+  opacity: 1;
+}
+
+/* ─── Section Divider with label ─────────────── */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ─── Pulse glow for scheduled indicator ─────── */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.3); }
+  50%      { box-shadow: 0 0 0 6px rgba(79, 70, 229, 0); }
+}
+.schedule-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulseGlow 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+/* ─── Source Badges (Startup Hunt) ───────────── */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.source-wellfound {
+  background: rgba(255,101,80,0.08);
+  color: #e5533e;
+  border: 1px solid rgba(255,101,80,0.18);
+}
+.source-linkedin-post {
+  background: rgba(37,99,235,0.08);
+  color: #2563eb;
+  border: 1px solid rgba(37,99,235,0.18);
+}
+.source-indeed {
+  background: rgba(79,70,229,0.06);
+  color: #6366f1;
+  border: 1px solid rgba(79,70,229,0.15);
+}
+.source-linkedin {
+  background: rgba(37,99,235,0.06);
+  color: #2563eb;
+  border: 1px solid rgba(37,99,235,0.15);
+}
+
+/* ─── Poster Badge (LinkedIn Post warm lead) ─── */
+.poster-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(99,102,241,0.08));
+  color: var(--blue);
+  border: 1px solid rgba(37,99,235,0.15);
+}
+
+/* ─── Startup Hunt Card ─────────────────────── */
+.startup-hunt-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+.startup-hunt-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #FF6550, #f59e0b, #FF6550);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+/* ─── Startup Hunt Button ────────────────────── */
+.btn-startup {
+  background: linear-gradient(135deg, #FF6550, #e5533e);
+  color: #fff;
+  border-color: #FF6550;
+  box-shadow: 0 4px 16px rgba(255,101,80,0.25);
+}
+.btn-startup:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e5533e, #dc2626);
+  box-shadow: 0 6px 20px rgba(255,101,80,0.35);
+}

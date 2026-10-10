@@ -2,44 +2,19 @@
 import express from 'express'
 import { prisma } from '../db/client.js'
 import { sendOutreach, checkForReplies, sendAllApproved } from '../agents/outreachAgent.js'
-import { getAuthUrl, exchangeCodeForTokens, loadTokens } from '../mcp/gmailTool.js'
+import { loadTokens } from '../mcp/gmailTool.js'
 import { linkedInLogin } from '../mcp/linkedinTool.js'
+import { fetch_founder_info, fetch_company_news, draft_cold_message } from '../mcp/mcpServer.js'
 
 const router = express.Router()
 
-// ─── Gmail OAuth ──────────────────────────────────────────────────────────────
-
-// GET /auth/gmail — redirect to Google consent screen
-router.get('/gmail', (req, res) => {
-  const url = getAuthUrl()
-  res.redirect(url)
-})
-
-// GET /auth/gmail/callback — Google redirects here with code
-router.get('/gmail/callback', async (req, res) => {
-  try {
-    const { code } = req.query
-    await exchangeCodeForTokens(code)
-    res.send(`
-      <html><body style="font-family:monospace;padding:40px;background:#080808;color:#00ff88">
-        <h2>✅ Gmail connected!</h2>
-        <p>You can close this tab and return to GhostApply.</p>
-      </body></html>
-    `)
-  } catch (err) {
-    res.status(500).send(`Error: ${err.message}`)
-  }
-})
-
-// GET /api/outreach/gmail/status — check if Gmail is connected
+// ─── Gmail Status ─────────────────────────────────────────────────────────────
 router.get('/gmail/status', (req, res) => {
   const tokens = loadTokens()
   res.json({ connected: !!tokens })
 })
 
 // ─── LinkedIn Login ───────────────────────────────────────────────────────────
-
-// POST /api/outreach/linkedin/login
 router.post('/linkedin/login', async (req, res) => {
   try {
     const { email, password } = req.body
@@ -50,14 +25,101 @@ router.post('/linkedin/login', async (req, res) => {
   }
 })
 
-// ─── Send Outreach ────────────────────────────────────────────────────────────
+// ─── POST /api/outreach/enrich/:jobId — per-job on-demand enrichment ──────────
+// Called when user clicks "Reach Out" on a specific job
+// Runs 4-layer founder enrichment + drafts cold message (does NOT send anything)
+router.post('/enrich/:jobId', async (req, res) => {
+  try {
+    const job = await prisma.job.findUnique({ where: { id: req.params.jobId } })
+    if (!job) return res.status(404).json({ error: 'Job not found' })
 
-// POST /api/outreach/send
+    // Return immediately with a status — enrichment is async
+    res.json({ success: true, message: 'Enrichment started', jobId: job.id })
+
+    // Run enrichment async after response
+    ;(async () => {
+      try {
+        console.log(`\n🎯 On-demand enrichment for: ${job.title} @ ${job.company}`)
+
+        const founderInfo = await fetch_founder_info({
+          companyName: job.company,
+          companyUrl: job.url,
+          jobDescription: job.description || ''
+        })
+
+        const newsData = await fetch_company_news({ companyName: job.company })
+
+        // Get resume summary for draft
+        const resume = await prisma.resume.findFirst({ where: { userId: 'default' } })
+        const resumeSummary = resume
+          ? resume.content.split('\n').filter(l => l.trim().length > 20).slice(0, 8).join(' ').slice(0, 600)
+          : ''
+
+        let fitData = {}
+        try { fitData = JSON.parse(job.fitReason || '{}') } catch {}
+
+        const { message } = await draft_cold_message({
+          founderName: founderInfo.name,
+          companyName: job.company,
+          jobTitle: job.title,
+          jobDescription: job.description?.slice(0, 1000) || '',
+          resumeSummary,
+          talkingPoint: fitData.talkingPoint || '',
+          companyNews: newsData.summary
+        })
+
+        await prisma.job.update({
+          where: { id: job.id },
+          data: {
+            founderName: founderInfo.name,
+            founderLinkedIn: founderInfo.linkedin,
+            founderEmail: founderInfo.email,
+            companyNews: newsData.summary,
+            draftMessage: message,
+            status: 'SELECTED',
+          }
+        })
+
+        console.log(`  ✅ Enrichment complete for: ${job.company}`)
+      } catch (err) {
+        console.error(`  ❌ Enrichment failed for ${job.company}:`, err.message)
+      }
+    })()
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── GET /api/outreach/enrich/:jobId/status — poll enrichment result ──────────
+router.get('/enrich/:jobId/status', async (req, res) => {
+  try {
+    const job = await prisma.job.findUnique({
+      where: { id: req.params.jobId },
+      select: {
+        id: true,
+        status: true,
+        founderName: true,
+        founderLinkedIn: true,
+        founderEmail: true,
+        companyNews: true,
+        draftMessage: true,
+      }
+    })
+    if (!job) return res.status(404).json({ error: 'Job not found' })
+    res.json({
+      ready: !!job.draftMessage,
+      ...job
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── POST /api/outreach/send ──────────────────────────────────────────────────
 router.post('/send', async (req, res) => {
   try {
     const { jobId, channel = 'linkedin', founderEmail } = req.body
     if (!jobId) return res.status(400).json({ error: 'jobId required' })
-
     const result = await sendOutreach({ jobId, channel, founderEmail })
     res.json(result)
   } catch (err) {
@@ -65,18 +127,18 @@ router.post('/send', async (req, res) => {
   }
 })
 
-// POST /api/outreach/send-all
+// ─── POST /api/outreach/send-all ──────────────────────────────────────────────
 router.post('/send-all', async (req, res) => {
   try {
     const { channel = 'linkedin' } = req.body
-    res.json({ message: 'Sending all approved jobs...', channel })
+    res.json({ message: 'Sending all selected jobs...', channel })
     sendAllApproved({ channel }).catch(console.error)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-// POST /api/outreach/check-replies
+// ─── POST /api/outreach/check-replies ────────────────────────────────────────
 router.post('/check-replies', async (req, res) => {
   try {
     const result = await checkForReplies()
@@ -86,9 +148,7 @@ router.post('/check-replies', async (req, res) => {
   }
 })
 
-// ─── Outreach History ─────────────────────────────────────────────────────────
-
-// GET /api/outreach/logs
+// ─── GET /api/outreach/logs ───────────────────────────────────────────────────
 router.get('/logs', async (req, res) => {
   try {
     const logs = await prisma.outreachLog.findMany({
@@ -102,9 +162,7 @@ router.get('/logs', async (req, res) => {
   }
 })
 
-// ─── Update draft message ─────────────────────────────────────────────────────
-
-// PATCH /api/outreach/draft/:jobId
+// ─── PATCH /api/outreach/draft/:jobId ────────────────────────────────────────
 router.patch('/draft/:jobId', async (req, res) => {
   try {
     const { draftMessage } = req.body

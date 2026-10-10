@@ -11,13 +11,26 @@ export async function sendOutreach({ jobId, channel = 'linkedin', founderEmail =
   const job = await prisma.job.findUnique({ where: { id: jobId } })
   if (!job) throw new Error(`Job ${jobId} not found`)
   if (!job.draftMessage) throw new Error(`No draft message for job ${jobId}`)
-  if (job.status !== 'APPROVED') throw new Error(`Job must be APPROVED to send outreach`)
+  if (job.status !== 'SELECTED') throw new Error(`Job must be SELECTED to send outreach`)
+
+  // Validate before doing anything
+  const resolvedEmail = founderEmail || job.founderEmail || null
+  if (channel === 'email' && !resolvedEmail) {
+    throw new Error(
+      `Cannot send email for "${job.company}" — no email address found. ` +
+      `Run Hunter.io enrichment or enter the email manually in the UI.`
+    )
+  }
+  if (channel === 'linkedin' && !job.founderLinkedIn) {
+    console.warn(`  ⚠️  No LinkedIn URL found for ${job.company} — outreach skipped`)
+    return { success: false, reason: 'no_linkedin_url' }
+  }
 
   console.log(`\n📬 Sending outreach: ${job.title} @ ${job.company} via ${channel}`)
 
   let result = null
 
-  if (channel === 'email' && founderEmail) {
+  if (channel === 'email' && resolvedEmail) {
     // Generate a smart subject line
     let fitData = {}
     try { fitData = JSON.parse(job.fitReason || '{}') } catch {}
@@ -32,7 +45,7 @@ export async function sendOutreach({ jobId, channel = 'linkedin', founderEmail =
     console.log(`  📌 Subject: "${subject}"`)
 
     result = await send_email({
-      to: founderEmail,
+      to: resolvedEmail,
       subject,
       body: job.draftMessage,
       jobId
@@ -155,14 +168,14 @@ export async function checkForReplies() {
 // ─── Bulk send all approved jobs ──────────────────────────────────────────────
 
 export async function sendAllApproved({ channel = 'linkedin' }) {
-  const approvedJobs = await prisma.job.findMany({
-    where: { status: 'APPROVED' }
+  const selectedJobs = await prisma.job.findMany({
+    where: { status: 'SELECTED' }
   })
 
-  console.log(`\n📬 Sending outreach for ${approvedJobs.length} approved jobs via ${channel}`)
+  console.log(`\n📬 Sending outreach for ${selectedJobs.length} selected jobs via ${channel}`)
 
   const results = []
-  for (const job of approvedJobs) {
+  for (const job of selectedJobs) {
     const result = await sendOutreach({ jobId: job.id, channel })
     results.push({ jobId: job.id, company: job.company, ...result })
 
